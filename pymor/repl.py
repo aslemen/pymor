@@ -9,7 +9,7 @@ import ruamel.yaml as yaml
 
 import prompt_toolkit as pt
 
-import obj
+from . import obj
 
 
 # ======
@@ -46,7 +46,6 @@ class State:
 
     dictionary = attr.ib(
         factory = lambda: obj.Dictionary(name = "<SESSION>"),
-        repr = False,
         type = obj.Dictionary
     )
 
@@ -171,7 +170,11 @@ def route(
                 "\n".join(map(repr, state.dictionary))
             )
         else:
-            state.session.prompt("EMPTY")
+            state.write_formatted(
+                ("class:info", "On-Memory Dictioanry: ")
+                ,
+                ("", "empty")
+            )
         # === END IF ===
     elif command == ":match":
         cmd_batch_analyze(command_args, state)

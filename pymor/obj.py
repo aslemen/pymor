@@ -195,17 +195,18 @@ class Dictionary:
     # === END ===
 
     @classmethod
-    def unify(
+    def union(
         cls,
-        this: "Dictionary",
-        other: "Dictionary",
+        *dicts: typing.List["Dictionary"],
         name: str = "<UNTITLED>"
     ):
         res = cls(name = name)
-        res._entries.update(this._entries)
-        res._entries.update(other._entries)
+        for d in dicts:
+            res._entries.update(d._entries)
+        # === END FOR d ===
 
         # No need of cleaning caches
+        return res
     # === END ===
 
     @functools.lru_cache(maxsize = 10240)
