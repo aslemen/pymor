@@ -157,34 +157,6 @@ class Dictionary:
             self.match.cache_clear()
         # === END IF ===
     # === END ===
-    
-    def modify(
-        self,
-        func: typing.Mapping[Entry, typing.Set[Entry]]
-    ) -> typing.NoReturn:
-        old_dict = self._entries
-        self._entries = pygtrie.CharTrie()
-        self.match.cache_clear()
-
-        for new_entry in itertools.chain.from_iterable(
-            func(old_entry)
-            for old_entry in itertools.chain.from_iterable(
-                old_dict.values()
-            )
-        ):
-            self.add(new_entry)
-        # === END FOR entry ====
-    # === END ===
-
-    def populate(
-        self, 
-        func: typing.Mapping[Entry, typing.Set[Entry]]
-    ) -> "Dictionary":
-        return Dictionary(
-            name = self.name,
-            entries = map(func, iter(self))
-        )
-    # === END ===
 
     def merge(
         self,
