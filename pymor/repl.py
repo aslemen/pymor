@@ -11,16 +11,9 @@ import prompt_toolkit as pt
 
 from . import obj
 
-
 # ======
 # Initialization
 # ======
-# ------
-# The Yaml Engine
-# ------
-yaml_engine = yaml.YAML()
-yaml_engine.register_class(obj.Dictionary)
-yaml_engine.register_class(obj.Entry)
 
 # ------
 # Prompt Style
@@ -44,9 +37,9 @@ class State:
         type = pt.PromptSession
     )
 
-    dictionary = attr.ib(
-        factory = lambda: obj.Dictionary(name = "<SESSION>"),
-        type = obj.Dictionary
+    model = attr.ib(
+        factory = lambda: obj.Model(name = "<SESSION>"),
+        type = obj.Model
     )
 
     def readline(self) -> str:
@@ -69,12 +62,16 @@ class State:
         )
     # === END ===
 
-    def give_info(self, txt: str) -> typing.NoReturn:
+    def give_info(
+        self, 
+        txt: str, 
+        kind: str = "INFO"
+    ) -> typing.NoReturn:
         self.write_formatted(
-            ("class:info", "INFO: "),
+            ("class:info", kind + ": "),
             ("", txt),
         )
-    # === END ===   
+    # === END === 
 
     def give_error(self, txt: str) -> typing.NoReturn:
         self.write_formatted(
@@ -89,9 +86,14 @@ class State:
 # ======
 def cmd_batch_analyze(words: typing.Iterable[str], state: State):
     for num, word in enumerate(words, 1):
-        state.give_info("analyzing word #{num}".format(num = num))
+        state.give_info(
+            "analyzing word #{num}: {word}".format(
+                num = num,
+                word = word,
+            )
+        )
         
-        word_candidates = state.dictionary.match(word)
+        word_candidates = state.model.match(word)
 
         if word_candidates:
             for candidate in word_candidates:
@@ -121,61 +123,74 @@ def route(
     command = command_token[0]
     command_args = command_token[1:]
     if command == ":pwd":
-        state.write_formatted(
-            ("class:info", "Current Working Directory: ")
-            ,
-            ("", str(pathlib.Path.cwd()))
+        state.give_info(
+            str(pathlib.Path.cwd()),
+            kind = "Current Working Directory"
         )
-    elif command == ":load":
+    elif command == ":reload":
+        if len(command_args) != 1:
+            state.give_error(
+                "Exactly one argument is required"
+            )
+            return
+        # === END IF ===
+
         try:
-            for fp in map(pathlib.Path, command_args):
-                with open(fp, "r") as f:
-                    path_full = fp.absolute()
-                    filename = fp.name
+            path = pathlib.Path(command_args[0])
+            
+            state.give_info(
+                "reached the model {path}".format(
+                    path = path.absolute()
+                )
+            )
 
-                    state.give_info(
-                        "opened the dictionary {path}".format(
-                            path = path_full
-                        )
-                    )
+            state.model = obj.load_model_dir(path)
 
-                    new_dict = yaml_engine.load(f)
-
-                    state.give_info(
-                        "fetched {num} entries(s) from {name}".format(
-                            num = len(new_dict),
-                            name = filename
-                        )
-                    )
-
-                    state.dictionary.merge(new_dict)
-
-                    state.give_info(
-                        "successfully incorporated entries from {fn}".format(
-                            fn = filename
-                        )
-                    )
-                # === END WITH f ===
-            # === END FOR fp ===
+            state.give_info(
+                "successfully incorporated entries from {fn}".format(
+                    fn = path.name
+                )
+            )
         except FileNotFoundError as not_found:
-            state.give_error("invalid file name: " + not_found.filename)
+            state.give_error("invalid file path: " + not_found.filename)
         except Exception as e:
             raise e
         # === END TRY ===
-    elif command == ":dict":
-        dic = state.dictionary
+    elif command == ":model":
+        model = state.model
 
-        if dic._entries:
-            pt.print_formatted_text(
-                "\n".join(map(repr, state.dictionary))
-            )
+        state.give_info(
+            model.name,
+            kind = "Model Name"
+        )
+
+        path_raw = model.source_dir
+        
+        if isinstance(path_raw, pathlib.Path):
+            path = str(path_raw.absolute())
         else:
-            state.write_formatted(
-                ("class:info", "On-Memory Dictioanry: ")
-                ,
-                ("", "empty")
-            )
+            path = str(path_raw)
         # === END IF ===
+
+        state.give_info(
+            path,
+            kind = "Path to the Model"
+        )
+
+        state.give_info(
+            (
+                "\n" + "\n".join(map(repr, model))
+                if model._entries
+                else "empty"
+            ),
+            kind = "Dictionary"
+        )
+        # === END IF ===
+    elif command == ":model-ext-src":
+        state.give_info(
+            state.model.ext_src,
+            kind = "Source Code of the Model Extension"
+        )
     elif command == ":match":
         cmd_batch_analyze(command_args, state)
     elif command.startswith(":"):

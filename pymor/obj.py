@@ -1,6 +1,9 @@
 import attr
 import typing
 
+import pathlib
+import importlib.util as imputil
+
 import collections
 import pygtrie
 
@@ -90,13 +93,29 @@ class Entry:
     slots = True,
     cmp = False,
 )
-class Dictionary:
+class Model:
     name = attr.ib(
         repr = True,
         init = True,
         default = "<UNTITLED>",
         kw_only = True,
         type = str,
+    )
+
+    source_dir = attr.ib(
+        repr = False,
+        init = True,
+        default = "<UNKNOWN>",
+        kw_only = True,
+        type = typing.Union[str, "pathlib.Path"]
+    )
+
+    ext_src = attr.ib(
+        repr = False,
+        init = True,
+        default = "",
+        kw_only = True,
+        type = str
     )
 
     _entries = attr.ib(
@@ -160,7 +179,7 @@ class Dictionary:
 
     def merge(
         self,
-        other: "Dictionary"
+        other: "Model"
     ):
         self._entries.update(other._entries)
         self.match.cache_clear()
@@ -169,10 +188,10 @@ class Dictionary:
     @classmethod
     def union(
         cls,
-        *dicts: typing.List["Dictionary"],
-        name: str = "<UNTITLED>"
+        *dicts: typing.List["Model"],
+        **kwargs
     ):
-        res = cls(name = name)
+        res = cls(**kwargs)
         for d in dicts:
             res._entries.update(d._entries)
         # === END FOR d ===
@@ -217,7 +236,7 @@ class Dictionary:
     def to_yaml(
         cls, 
         representer, 
-        node: "Dictionary"
+        node: "Model"
     ) -> yaml.nodes.MappingNode:
         return representer.represent_mapping(
             tag = cls.yaml_tag,
@@ -233,7 +252,7 @@ class Dictionary:
         cls, 
         constructor: yaml.constructor.Constructor, 
         node: yaml.nodes.MappingNode
-    ) -> "Dictionary":
+    ) -> "Model":
         dict_actual = yaml.comments.CommentedMap()
         constructor.construct_mapping(node, dict_actual, deep = True)
 
@@ -246,3 +265,43 @@ class Dictionary:
         return res
     # === END ===
 # === END CLASS ===
+
+def load_model_dir(
+    model_dir: typing.Union[str, pathlib.Path],
+    name: typing.Optional[str] = None
+) -> Model:
+    if isinstance(model_dir, pathlib.Path):
+        model_dir_path = model_dir
+    elif isinstance(model_dir, str) or isinstance(model_dir, pathlib.PurePath):
+        model_dir_path = pathlib.Path(model_dir)
+    else:
+        raise TypeError
+    # === END IF ===
+
+    module_name = name if name else model_dir_path.name
+    module_spec = imputil.spec_from_file_location(
+        name = "mod" + module_name,
+        location = model_dir_path / "mod.py"
+    )
+    module = imputil.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+
+    cls_extdict = module.ExtModel
+
+    yaml_engine = yaml.YAML()
+    yaml_engine.register_class(Entry)
+    yaml_engine.register_class(cls_extdict)
+
+    return  cls_extdict.union(
+        *map(
+            yaml_engine.load,
+            itertools.chain(
+                model_dir_path.glob("**/*.dict.yaml"),
+                model_dir_path.glob("**/*.dict.yml")
+            )
+        ),
+        name = module_name,
+        source_dir = model_dir_path,
+        ext_src = "NotImplemented"
+    )
+# === END ===

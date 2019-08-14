@@ -1,1 +1,1 @@
-from pymor.obj import Dictionary, Entry
+from pymor.obj import Model, Entry
