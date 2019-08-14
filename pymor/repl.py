@@ -193,6 +193,8 @@ def route(
         )
     elif command == ":match":
         cmd_batch_analyze(command_args, state)
+    elif command in [":exit", ":quit"] :
+        raise EOFError
     elif command.startswith(":"):
         state.give_error("invalid command")
     else: 
@@ -206,12 +208,12 @@ def main(state: State = State()):
     while True:
         try:
             command_raw = state.readline()
+            route(command_raw, state)
         except KeyboardInterrupt:
             continue
         except EOFError:
             break
-        else:
-            route(command_raw, state)
+    # === END WHILE ===            
 # === END ===
 
 if __name__ == "__main__":
