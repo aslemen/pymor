@@ -19,6 +19,10 @@ import ruamel.yaml as yaml
     cache_hash = True
 )
 class Entry:
+    """
+        Represents a lexical entry.
+    """
+
     phon = attr.ib(
         cmp = True,
         kw_only = True,
@@ -58,7 +62,11 @@ class Entry:
         cls, 
         representer, 
         node: "Entry"
-    ) -> yaml.nodes.MappingNode :
+    ) -> yaml.nodes.MappingNode:
+        """
+        Provide a YAML serialization method.
+        Made for `ruamel.yaml`.
+        """
         return representer.represent_mapping(
             tag = cls.yaml_tag,
             mapping = {
@@ -76,6 +84,10 @@ class Entry:
         constructor: yaml.constructor.Constructor, 
         node: yaml.nodes.MappingNode
     ) -> "Entry":
+        """
+        Provide a YAML deserialization method.
+        Made for `ruamel.yaml`.
+        """
         dict_actual = yaml.comments.CommentedMap()
 
         constructor.construct_mapping(node, dict_actual)
@@ -94,6 +106,17 @@ class Entry:
     cmp = False,
 )
 class Model:
+    """
+    Represents a basic model of {package-name},
+        which consists of 
+        a list of `ENTRY`s (lexical entries),
+        a way to populate allomorphs,
+        and a particular procedure to analyze words. 
+    
+    Actual models of particular languages can be implemented
+        by inheriting this class.
+    """
+
     name = attr.ib(
         repr = True,
         init = True,
@@ -148,10 +171,16 @@ class Model:
     # === END ===
     
     def clear_caches(self) -> typing.NoReturn:
+        """
+            Clear 
+        """
         self.tokenize.cache_clear()
     # === END ===
 
     def _add(self, entry: Entry) -> typing.NoReturn:
+        """
+            Not supposed to be overrided.
+        """
         phon = entry.phon
 
         if phon not in self._entries:
@@ -162,11 +191,18 @@ class Model:
     # === END ===
 
     def add(self, entry: Entry) -> typing.NoReturn:
+        """
+            This method can be overrided for customization.
+        """
         self._add(entry)
         self.clear_caches()
     # === END ===
 
     def batchadd(self, entries: typing.Iterable[Entry]) -> typing.NoReturn:
+        """
+            Not supposed to be overrided.
+        """
+        
         for entry in entries: 
             self._add(entry)
         self.clear_caches()
