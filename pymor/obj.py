@@ -146,6 +146,10 @@ class Model:
     def has_key(self, key: str) -> bool:
         return self._entries.has_key(str)
     # === END ===
+    
+    def clear_caches(self) -> typing.NoReturn:
+        self.tokenize.cache_clear()
+    # === END ===
 
     def _add(self, entry: Entry) -> typing.NoReturn:
         phon = entry.phon
@@ -159,13 +163,13 @@ class Model:
 
     def add(self, entry: Entry) -> typing.NoReturn:
         self._add(entry)
-        self.match.cache_clear()
+        self.clear_caches()
     # === END ===
 
     def batchadd(self, entries: typing.Iterable[Entry]) -> typing.NoReturn:
         for entry in entries: 
             self._add(entry)
-        self.match.cache_clear()
+        self.clear_caches()
     # === END ===
 
     def delete(self, entry: Entry) -> typing.NoReturn:
@@ -173,7 +177,7 @@ class Model:
         
         if phon in self._entries:
             self._entries[phon].discard(entry)
-            self.match.cache_clear()
+            self.clear_caches()
         # === END IF ===
     # === END ===
 
@@ -182,7 +186,7 @@ class Model:
         other: "Model"
     ):
         self._entries.update(other._entries)
-        self.match.cache_clear()
+        self.clear_caches()
     # === END ===
 
     @classmethod
@@ -201,7 +205,7 @@ class Model:
     # === END ===
 
     @functools.lru_cache(maxsize = 10240)
-    def match(self, req: str) -> typing.FrozenSet[typing.Tuple[Entry]]:
+    def tokenize(self, req: str) -> typing.FrozenSet[typing.Tuple[Entry]]:
         def match_single_prefix(
             req: str,
             matched_obj: pygtrie.Trie._Step,
@@ -216,7 +220,8 @@ class Model:
                 return (
                     (entry, ) + subsequents
                     for entry, subsequents
-                    in itertools.product(entries, self.match(remainder))
+                    in itertools.product(entries, self.tokenize(remainder)) 
+                        # RECURSION
                 )
             # === END IF ===
         # === END ===
@@ -255,7 +260,7 @@ class Model:
     ) -> "Model":
         dict_actual = yaml.comments.CommentedMap()
         constructor.construct_mapping(node, dict_actual, deep = True)
-
+        
         ver = dict_actual["version"]
         res = cls()
 
@@ -275,7 +280,12 @@ def load_model_dir(
     elif isinstance(model_dir, str) or isinstance(model_dir, pathlib.PurePath):
         model_dir_path = pathlib.Path(model_dir)
     else:
-        raise TypeError
+        raise TypeError("""\
+The model_dir argument of the loader (given as {obj}) must be of either type str or type pathlib.Path.
+""".format(
+            obj = repr(model_dir)
+        )
+    )
     # === END IF ===
 
     module_name = name if name else model_dir_path.name

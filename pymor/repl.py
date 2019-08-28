@@ -93,7 +93,7 @@ def cmd_batch_analyze(words: typing.Iterable[str], state: State):
             )
         )
         
-        word_candidates = state.model.match(word)
+        word_candidates = state.model.tokenize(word)
 
         if word_candidates:
             for candidate in word_candidates:
