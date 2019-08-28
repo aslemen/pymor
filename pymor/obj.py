@@ -21,6 +21,35 @@ import ruamel.yaml as yaml
 class Entry:
     """
         Represents a lexical entry.
+
+        Comparable, frozen and hashable.
+    
+        Attributes
+        ----------
+        phon : str
+            The phonological form.
+        feat : frozenset of (str, any), optional
+            The feature bundle.
+            Defaults to an empty `frozenset`.
+        sem : str, optional
+            The English translation. 
+            Defaults to an empty string.
+        gloss : str, optional
+            The gloss for lemmatization. 
+            Defaults to an empty string.
+
+        Notes
+        -----
+        Instance cannot go through changes
+        unless you make a new instance and setting up the parameters again.
+        The `attr.evolve` method (in the `attrs` package) might be helpful.
+        >>> import attr
+        ... item = Entry(phon = "ice", sem = "solid water")
+        ... attr.evolve(item, phon = "iced", sem = "being made icy")
+        {iced:being made icy}
+
+        To get a `dict` representation, 
+        use the `attr.asdict` method in `attrs`.
     """
 
     phon = attr.ib(
@@ -64,8 +93,28 @@ class Entry:
         node: "Entry"
     ) -> yaml.nodes.MappingNode:
         """
-        Provide a YAML serialization method.
+        Provides a YAML serialization instruction.
         Made for `ruamel.yaml`.
+
+        Examples
+        --------
+        >>> import ruamel.yaml as yaml
+        ... yaml_engine = yaml.YAML()
+        ... yaml_engine.register_class(Entry)
+        ... item = Entry(
+        ...     phon = "ices",
+        ...     feat = frozenset([("scat", "NP")]),
+        ...     sem = "iced water",
+        ...     gloss = "ice.PL"
+        ... )
+        ... yaml_engine.dump(item)
+        !e
+        phon: ices
+        feat:
+          scat: NP
+        sem: iced water
+        gloss: ice.PL
+
         """
         return representer.represent_mapping(
             tag = cls.yaml_tag,
@@ -85,8 +134,21 @@ class Entry:
         node: yaml.nodes.MappingNode
     ) -> "Entry":
         """
-        Provide a YAML deserialization method.
+        Provides a YAML deserialization instruction.
         Made for `ruamel.yaml`.
+
+        Examples
+        --------
+        >>> import ruamel.yaml as yaml
+        ... yaml_engine = yaml.YAML()
+        ... yaml_engine.register_class(Entry)
+        ... yaml_engine.load('''
+        ... !e
+        ... phon: ices
+        ... sem: solid water
+        ... ''')
+        {ices:solid water}
+        
         """
         dict_actual = yaml.comments.CommentedMap()
 
@@ -107,14 +169,54 @@ class Entry:
 )
 class Model:
     """
-    Represents a basic model of {package-name},
-        which consists of 
-        a list of `ENTRY`s (lexical entries),
-        a way to populate allomorphs,
-        and a particular procedure to analyze words. 
+    Represents a basic langauge model,
+    which consists of 
+    a list of lexical entries (of type `ENTRY`),
+    instructions to populate their allomorphs,
+    and a parser to analyze words. 
     
-    Actual models of particular languages can be implemented
-        by inheriting this class.
+    A model is formed by registering lexical items,
+    a process which is sometimes accompanied 
+    with gerenating their allomorphs by given morphological rules.
+    This is why we have 2*2 functions --- `add_raw`, `add` and
+    their batch variants.
+    The `add_raw` method adds a lexical item without any modification
+    while `add` adds a bunch of items resulting from 
+    the `populate` method, customized by users, applied to the input item.
+    The registered lexical entries are stored in a private 
+    trie which can be accessed via indexer,
+    in which indices are the phonological forms of the entries:
+
+    >>> m = Model(name = "test")
+    ... m.add(Entry(phon = "abc", sem = "1"))
+    ... m.add(Entry(phon = "abc", sem = "2"))
+    ... lexs = m["abc"]
+    ... "; ".join(lexs)
+    {abc:1}; {abc:2}
+
+    Note that since it is not rare to have homophones, the indexer will
+    returns an iterator of `Entry`s rather than a single one.
+
+    Parsing a word can thus be done with a set of registered lexical items
+    along with a tokenizer `tokenize`
+    and a lexical grammar specified by the (overwritable) `parse` method.
+
+    As already noted,
+    users can customize this class by inheriting it and overriting 
+    the `populate` and `parse` methods; 
+    in fact, models of particular languages are supposed to be thus made.
+
+    Models are either specified dynamically or stored in files.
+    For the details of the latter, refer to the `load_model_dir` method.
+
+    Arguments
+    ---------
+    name : str, optional
+        The name of the model. Defaults to "<UNTITLED>".
+    source_dir : str, optional
+        The source location of the model in the file system.
+    ext_src : str, optional.
+        The source code of the model. Yet to be implemented.
     """
 
     name = attr.ib(
@@ -172,15 +274,17 @@ class Model:
     
     def clear_caches(self) -> typing.NoReturn:
         """
-            Clear 
+        Clear methods' LRU caches of the instance.
         """
         self.tokenize.cache_clear()
     # === END ===
 
+    @staticmethod
+    def populate(entry: Entry) -> typing.Iterator[Entry]:
+        yield entry
+    # ======
+
     def _add(self, entry: Entry) -> typing.NoReturn:
-        """
-            Not supposed to be overrided.
-        """
         phon = entry.phon
 
         if phon not in self._entries:
@@ -190,54 +294,72 @@ class Model:
         # === END IF ===
     # === END ===
 
-    def add(self, entry: Entry) -> typing.NoReturn:
-        """
-            This method can be overrided for customization.
-        """
+    def add_raw(self, entry: Entry) -> typing.NoReturn:
         self._add(entry)
         self.clear_caches()
     # === END ===
 
-    def batchadd(self, entries: typing.Iterable[Entry]) -> typing.NoReturn:
+    def add_raw_batch(
+        self,
+        entries: typing.Iterable[Entry]
+    ) -> typing.NoReturn:
+        for entry in entries:
+            self._add(entry)
+        # === END FOR entry ===
+        
+        self.clear_caches()
+    # === END ===
+
+    def add(self, entry: Entry) -> typing.NoReturn:
         """
-            Not supposed to be overrided.
+        Warings
+        ------
+        Not supposed to be overrided.
+        """
+        for gen_entry in self.populate(entry):
+            self._add(gen_entry)
+        # === END ===
+
+        self.clear_caches()
+    # === END ===
+
+    def add_batch(self, entries: typing.Iterable[Entry]) -> typing.NoReturn:
+        """
+        Warnings
+        --------
+        Not supposed to be overrided.
         """
         
-        for entry in entries: 
-            self._add(entry)
+        for gen_entry in itertools.chain.from_iterable(
+            map(self.populate, entries)
+        ): 
+            self._add(gen_entry)
+        # === END FOR gen_entry ===
+
         self.clear_caches()
     # === END ===
 
     def delete(self, entry: Entry) -> typing.NoReturn:
+        """
+        Delete a lexical entry.
+        Nothing happens when it does not registered.
+
+        Notes
+        -----
+        Allomorphs generated through registeration will not deleted
+        along with the given entry.
+
+        Warnings
+        --------
+        Not supposed to be overrided.
+        """
+        
         phon = entry.phon
         
         if phon in self._entries:
             self._entries[phon].discard(entry)
             self.clear_caches()
         # === END IF ===
-    # === END ===
-
-    def merge(
-        self,
-        other: "Model"
-    ):
-        self._entries.update(other._entries)
-        self.clear_caches()
-    # === END ===
-
-    @classmethod
-    def union(
-        cls,
-        *dicts: typing.List["Model"],
-        **kwargs
-    ):
-        res = cls(**kwargs)
-        for d in dicts:
-            res._entries.update(d._entries)
-        # === END FOR d ===
-
-        # No need of cleaning caches
-        return res
     # === END ===
 
     @functools.lru_cache(maxsize = 10240)
@@ -297,11 +419,11 @@ class Model:
         dict_actual = yaml.comments.CommentedMap()
         constructor.construct_mapping(node, dict_actual, deep = True)
         
-        ver = dict_actual["version"]
+        _ = dict_actual["version"]
         res = cls()
 
         if True: # switch according to the version
-            res.batchadd(dict_actual["content"])
+            res.add_batch(dict_actual["content"])
 
         return res
     # === END ===
@@ -311,6 +433,21 @@ def load_model_dir(
     model_dir: typing.Union[str, pathlib.Path],
     name: typing.Optional[str] = None
 ) -> Model:
+    """
+    Load a model (of type `Model`) from a directory.
+
+    Arguments
+    ---------
+    model_dir : str or pathlib.Path
+        The path to the directory.
+        The directory consists of the following files:
+        `mod.py`
+            stores the custom class, 
+            which must be named `ExtModel`
+            and made to inherit the `Model` class.
+        `**/*.dict.yaml` or `**/*.dict.yml`
+            stores lexical entries.
+    """
     if isinstance(model_dir, pathlib.Path):
         model_dir_path = model_dir
     elif isinstance(model_dir, str) or isinstance(model_dir, pathlib.PurePath):
@@ -338,7 +475,8 @@ The model_dir argument of the loader (given as {obj}) must be of either type str
     yaml_engine.register_class(Entry)
     yaml_engine.register_class(cls_extdict)
 
-    return  cls_extdict.union(
+    
+    return cls_extdict.union(
         *map(
             yaml_engine.load,
             itertools.chain(
